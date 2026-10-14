@@ -130,7 +130,6 @@
         const SIZE = 200, CELL = 16, MAX_CITIES = 100;
         let items = [], draggingItem = null, currentZoom = 1.0;
         let obstacleGrid = [];
-        // Raw CSV obstacle data embedded from user input (200 rows x 51 cols in snippet, mapped into 200x200 grid)
         const rawCSV = `
 ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
@@ -173,7 +172,7 @@
 ,,,,,,,,,,,海,海,海,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,
 ,,,,,,,,,,,海,海,海,海,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 ,,,,,,,,,,,海,海,海,海,海,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-,,,,,,,,,,,海,海,海,海,海,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,海,海,,,,,,,,,,,,,,,,,,,,,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,海,海,海,海,海,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,海,海,,,,,,,,,,,,,,,,,,,,,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,
 ,,,,,,,,,,,,海,海,海,海,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,海,海,海,海,海,海,,,,,,,,,,,,,,,,,,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,
 ,,,,,,,,,,,,,海,海,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,海,海,海,海,海,海,,,,,,,,,,,,,,,,,,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,
 ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,海,海,海,海,海,海,,,,,,,,,,,,,,,,,,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,
@@ -255,27 +254,16 @@
 ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
-,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 ,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,`.trim();
 
         function parseObstacleCSV() {
-            // Initialize 200x200 grid with empty strings
             obstacleGrid = Array.from({ length: SIZE }, () => Array(SIZE).fill(''));
             const rows = rawCSV.split('\n');
             for (let r = 0; r < Math.min(rows.length, SIZE); r++) {
                 const cols = rows[r].split(',');
                 for (let c = 0; c < Math.min(cols.length, SIZE); c++) {
                     const val = cols[c].trim();
-                    if (val) {
-                        obstacleGrid[r][c] = val;
-                    }
+                    if (val) obstacleGrid[r][c] = val;
                 }
             }
         }
@@ -298,7 +286,8 @@
         }
 
         function initMap() {
-            parseObstacleCSV();            renderRulers();
+            parseObstacleCSV();
+            renderRulers();
             renderGrid();
             setupCursorTracker();
             setupGlobalDragListeners();
@@ -310,11 +299,8 @@
             for (let y = 0; y < SIZE; y++) topHtml += `<div class="absolute text-center" style="left:${y * CELL}px; width:${CELL}px; font-size:9px;">${790 - y}</div>`;
             for (let x = 0; x < SIZE; x++) leftHtml += `<div class="absolute flex items-center justify-end pr-1.5" style="top:${x * CELL}px; height:${CELL}px; font-size:9px;">${700 - x}</div>`;
             
-            // Add reference line between Y750 and Y749 (which corresponds to global Y coordinate 750 / internal grid row calculation)
-            // Coordinate mapping: Y = 790 - y. Y = 750 means y = 40. Line should be right between y=40 and y=41 (i.e. at left = 41 * CELL)
-            // Let's compute exact pixel position for y = 40 (since Y750 is y=40 and Y749 is y=41)
-            const y750InternalY = 790 - 750; // = 40
-            const linePixelLeft = (y750InternalY + 1) * CELL; // between y=40 and y=41
+            const y750InternalY = 790 - 750;
+            const linePixelLeft = (y750InternalY + 1) * CELL;
             topHtml += `<div class="absolute top-0 bottom-0 border-l-2 border-red-500/80 pointer-events-none z-30" style="left:${linePixelLeft}px; height: 3200px;" title="Y750 / Y749境界"></div>`;
 
             document.getElementById('ruler-top').innerHTML = topHtml;
@@ -322,10 +308,8 @@
         }
 
         function checkCollision(rx, ry, size, excludeId = null) {
-            // Check map boundaries
             if (rx < 0 || ry < 0 || rx + size > SIZE || ry + size > SIZE) return true;
 
-            // Check collision with obstacles (resources, mountains, ocean)
             for (let r = 0; r < size; r++) {
                 for (let c = 0; c < size; c++) {
                     const checkX = rx + r;
@@ -336,7 +320,6 @@
                 }
             }
 
-            // Check collision with other items
             for (let item of items) {
                 if (item.id === excludeId) continue;
                 const cfg = getConfig(item.type);
@@ -346,12 +329,32 @@
         }
 
         function findFreePosition(size) {
-            for (let x = 10; x <= SIZE - size; x++) {
-                for (let y = 10; y <= SIZE - size; y++) {
-                    if (!checkCollision(x, y, size)) return {x, y};
+            // Target world coordinates X637, Y765 => Internal grid coordinates (x, y)
+            const targetX = 700 - 637;
+            const targetY = 790 - 765;
+
+            if (targetX >= 0 && targetY >= 0 && targetX + size <= SIZE && targetY + size <= SIZE) {
+                if (!checkCollision(targetX, targetY, size)) {
+                    return { x: targetX, y: targetY };
                 }
             }
-            // fallback scan from top-left if needed
+
+            for (let radius = 1; radius < SIZE; radius++) {
+                for (let dx = -radius; dx <= radius; dx++) {
+                    for (let dy = -radius; dy <= radius; dy++) {
+                        if (Math.abs(dx) === radius || Math.abs(dy) === radius) {
+                            const nx = targetX + dx;
+                            const ny = targetY + dy;
+                            if (nx >= 0 && ny >= 0 && nx + size <= SIZE && ny + size <= SIZE) {
+                                if (!checkCollision(nx, ny, size)) {
+                                    return { x: nx, y: ny };
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             for (let x = 0; x <= SIZE - size; x++) {
                 for (let y = 0; y <= SIZE - size; y++) {
                     if (!checkCollision(x, y, size)) return {x, y};
@@ -365,7 +368,8 @@
             if (cfg.isCity && items.filter(i => getConfig(i.type).isCity).length >= MAX_CITIES) return;
             const pos = findFreePosition(cfg.coreSize);
             const cityCount = items.filter(i => getConfig(i.type).isCity).length + 1;
-            items.push({ id: 'item_' + Date.now(), type, x: pos.x, y: pos.y, name: cfg.isCity ? `都市${cityCount}` : (type === 'hq' ? '本陣' : type === 'trap' ? '罠' : '同盟旗') });
+            let name = cfg.isCity ? `都市${cityCount}` : (type === 'hq' ? '本陣' : type === 'trap' ? '罠' : '同盟旗');
+            items.push({ id: 'item_' + Date.now(), type, x: pos.x, y: pos.y, name });
             renderGrid();
             updateLists();
         }
@@ -420,7 +424,6 @@
                 html += `<div class="absolute draggable ${cfg.bg} border rounded flex items-center justify-center text-[10px] font-bold shadow-md z-10" style="left:${item.y*CELL}px; top:${item.x*CELL}px; width:${cfg.coreSize*CELL}px; height:${cfg.coreSize*CELL}px;" onmousedown="startDrag(event, '${item.id}')" ontouchstart="startDrag(event, '${item.id}')">${cfg.isCity ? '都市' : cfg.label}</div>`;
             });
 
-            // Render Y750 / Y749 boundary line directly on the grid as well
             const y750InternalY = 790 - 750;
             const gridLineLeft = (y750InternalY + 1) * CELL;
             html += `<div class="absolute top-0 bottom-0 border-l-2 border-red-500 pointer-events-none z-20 shadow" style="left:${gridLineLeft}px; height: 3200px;"></div>`;
@@ -468,7 +471,6 @@
 
         function setupGlobalDragListeners() {
             const wrapper = document.getElementById('map-wrapper');
-            let originalPos = null;
 
             function onMove(cx, cy) {
                 if (!draggingItem) return;
