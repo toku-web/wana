@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ホワサバ 複数都市マップ移転シミュレータ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap');
+        body { font-family: 'Noto Sans JP', sans-serif; background: #0f172a; color: #f8fafc; min-height: 100vh; }
+        .glass { background: rgba(30, 41, 59, 0.75); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .map-grid { background-color: #0f172a; background-image: linear-gradient(to right, rgba(255,255,255,0.06) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.06) 1px, transparent 1px); background-size: 16px 16px; }
+        .domain-normal { background: rgba(59,130,246,0.18); border: 1px dashed rgba(96,165,250,0.5); pointer-events: none; }
+        .domain-planet1 { background: rgba(168,85,247,0.18); border: 1px dashed rgba(192,132,252,0.6); pointer-events: none; }
+        .domain-planet3 { background: rgba(236,72,153,0.18); border: 1px dashed rgba(244,114,182,0.6); pointer-events: none; }
+        .domain-hq { background: rgba(234,179,8,0.22); border: 1px dashed rgba(250,204,21,0.7); pointer-events: none; }
+        .domain-flag { background: rgba(245,158,11,0.18); border: 1px dashed rgba(251,191,36,0.6); pointer-events: none; }
+        /* Trap has no domain overlay */
+        
+        /* Obstacle cell styles */
+        .obs-resource { background-color: rgba(146, 64, 14, 0.65); border: 1px solid rgba(180, 83, 9, 0.8); }
+        .obs-mountain { background-color: rgba(75, 85, 99, 0.7); border: 1px solid rgba(107, 114, 128, 0.8); }
+        .obs-ocean { background-color: rgba(30, 64, 175, 0.65); border: 1px solid rgba(37, 99, 235, 0.8); }
+
+        .draggable { cursor: grab; user-select: none; touch-action: none; }
+        .draggable:active { cursor: grabbing; }
+        #map-container-inner { transform-origin: top left; transition: transform 0.1s ease-out; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    </style>
+</head>
+<body class="p-3 md:p-6 flex flex-col justify-between">
+    <header class="max-w-7xl mx-auto w-full text-center mb-4">
+        <div class="inline-flex items-center gap-2 bg-blue-500/20 text-blue-300 px-3 py-1 rounded-full border border-blue-500/30 mb-2">
+            <i class="fa-solid fa-snowflake text-xs animate-spin" style="animation-duration: 12s;"></i>
+            <span class="font-bold text-xs">ホワイトアウト・サバイバル 攻略ツール</span>
+        </div>
+        <h1 class="text-2xl md:text-3xl font-black text-white">都市・同盟建築 配置シミュレータ (200×200)</h1>
+    </header>
+
+    <main class="max-w-7xl mx-auto w-full flex-grow grid grid-cols-1 lg:grid-cols-4 gap-4 items-start">
+        <!-- Control Panel -->
+        <div class="glass p-4 rounded-xl space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-700 pb-2">
+                <h2 class="text-sm font-bold text-blue-400"><i class="fa-solid fa-layer-group"></i> 施設管理</h2>
+                <div class="flex gap-1 text-[11px]">
+                    <span id="city-badge" class="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 font-mono">都市: 0/100</span>
+                    <span id="flag-badge" class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono">建築: 0</span>
+                </div>
+            </div>
+
+            <div class="space-y-2">
+                <h3 class="text-xs font-bold text-slate-400">都市追加</h3>
+                <div class="grid grid-cols-3 gap-1">
+                    <button onclick="addItem('normal')" class="py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded font-bold text-[10px] transition-colors shadow">通常(2×2)</button>
+                    <button onclick="addItem('planet1')" class="py-2 bg-purple-600 hover:bg-purple-500 text-white rounded font-bold text-[10px] transition-colors shadow">惑星1(領域6)</button>
+                    <button onclick="addItem('planet3')" class="py-2 bg-pink-600 hover:bg-pink-500 text-white rounded font-bold text-[10px] transition-colors shadow">惑星3(領域10)</button>
+                </div>
+                <div>
+                    <button onclick="clearAll(true)" class="w-full py-1.5 bg-rose-950 hover:bg-rose-900 text-rose-300 rounded text-[11px] font-bold border border-rose-800 transition-colors">全都市削除</button>
+                </div>
+            </div>
+
+            <div class="space-y-2 pt-2 border-t border-slate-700">
+                <h3 class="text-xs font-bold text-amber-400">同盟建築を追加</h3>
+                <div class="grid grid-cols-3 gap-1">
+                    <button onclick="addItem('flag')" class="py-1.5 bg-amber-700 hover:bg-amber-600 text-white rounded text-[11px] font-bold transition-colors shadow">同盟旗(7×7/実1)</button>
+                    <button onclick="addItem('hq')" class="py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded text-[11px] font-bold transition-colors shadow">本部(15×15/実3)</button>
+                    <button onclick="addItem('trap')" class="py-1.5 bg-orange-700 hover:bg-orange-600 text-white rounded text-[11px] font-bold transition-colors shadow">罠(3×3/領域なし)</button>
+                </div>
+                <div>
+                    <button onclick="clearAll(false)" class="w-full py-1.5 bg-rose-950 hover:bg-rose-900 text-rose-300 rounded text-[11px] font-bold border border-rose-800 transition-colors">全同盟建築削除</button>
+                </div>
+            </div>
+
+            <div class="pt-2 border-t border-slate-700 space-y-2">
+                <div>
+                    <h3 class="text-xs font-bold text-slate-300 mb-1">都市一覧</h3>
+                    <div id="city-list" class="max-h-[120px] overflow-y-auto space-y-1 pr-1"></div>
+                </div>
+                <div>
+                    <h3 class="text-xs font-bold text-amber-300 mb-1">同盟建築一覧</h3>
+                    <div id="flag-list" class="max-h-[100px] overflow-y-auto space-y-1 pr-1"></div>
+                </div>
+            </div>
+
+            <div class="pt-2 border-t border-slate-700 space-y-1.5">
+                <h3 class="text-xs font-bold text-slate-300">マップ凡例</h3>
+                <div class="grid grid-cols-3 gap-1 text-[10px] text-center">
+                    <div class="bg-amber-900/60 border border-amber-600 text-amber-200 py-1 rounded">資源(茶)</div>
+                    <div class="bg-slate-700 border border-slate-500 text-slate-200 py-1 rounded">山(灰)</div>
+                    <div class="bg-blue-900/60 border border-blue-600 text-blue-200 py-1 rounded">海(青)</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Map Workspace -->
+        <div class="lg:col-span-3 glass p-4 rounded-xl space-y-3">
+            <div class="flex justify-between items-center border-b border-slate-700 pb-2 flex-wrap gap-2">
+                <h2 class="text-sm font-bold text-blue-400"><i class="fa-solid fa-map-location-dot"></i> マップ (200×200 / 左上 X700, Y790)</h2>
+                <div class="flex gap-2 items-center flex-wrap">
+                    <div class="flex items-center gap-1 bg-slate-900 px-2 py-1 rounded border border-slate-700 text-xs">
+                        <span class="text-slate-400 text-[10px] mr-1">拡大:</span>
+                        <button onclick="changeZoom(-0.2)" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 rounded font-bold text-slate-200 transition-colors">-</button>
+                        <span id="zoom-level-text" class="font-mono text-blue-300 w-10 text-center text-[11px]">100%</span>
+                        <button onclick="changeZoom(0.2)" class="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 rounded font-bold text-slate-200 transition-colors">+</button>
+                    </div>
+                    <button onclick="autoArrange()" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs font-bold transition-colors shadow">自動整列</button>
+                </div>
+            </div>
+
+            <div class="overflow-auto max-h-[700px] p-12 rounded-xl bg-slate-950 border border-slate-800 flex justify-start items-start">
+                <div id="map-container-inner" class="relative">
+                    <div id="map-wrapper" class="relative inline-block bg-slate-900 border border-slate-700 select-none shadow-2xl" style="padding-top:32px; padding-left:48px; margin: 24px;">
+                        <div id="ruler-top" class="absolute top-0 left-[48px] h-8 flex font-mono text-[10px] text-slate-400 pointer-events-none" style="width:3200px;"></div>
+                        <div id="ruler-left" class="absolute top-[32px] left-0 w-12 flex flex-col font-mono text-[10px] text-slate-400 text-right pr-2 pointer-events-none" style="height:3200px;"></div>
+                        <div id="grid-map" class="map-grid relative grid select-none" style="width:3200px; height:3200px; grid-template-columns:repeat(200, 16px); grid-template-rows:repeat(200, 16px);"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Cursor coordinate tooltip -->
+    <div id="tip" class="fixed pointer-events-none z-50 bg-slate-900/90 border border-blue-500 text-blue-200 px-2 py-0.5 rounded text-[10px] font-mono hidden shadow-lg"></div>
+
+    <script>
+        const SIZE = 200, CELL = 16, MAX_CITIES = 100;
+        let items = [], draggingItem = null, currentZoom = 1.0;
+        let obstacleGrid = [];
+        // Raw CSV obstacle data embedded from user input (200 rows x 51 cols in snippet, mapped into 200x200 grid)
+        const rawCSV = `
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,山,山,山,山,山,山,山,山,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,山,山,山,山,山,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,山,山,山,山,山,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,山,山,山,山,山,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,山,山,山,山,山,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,山,山,山,山,山,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,山,山,山,山,山,山,山,山,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,山,山,山,山,山,山,山,山,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,海,海,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,海,海,海,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,海,海,海,海,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,海,海,海,海,海,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,海,海,海,海,海,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,海,海,,,,,,,,,,,,,,,,,,,,,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,海,海,海,海,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,海,海,海,海,海,海,,,,,,,,,,,,,,,,,,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,海,海,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,海,海,海,海,海,海,,,,,,,,,,,,,,,,,,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,海,海,海,海,海,海,,,,,,,,,,,,,,,,,,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,海,海,海,海,海,,,,,,,,,,,,,,,,,,,,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,海,海,海,海,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,山,山,山,山,山,山,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,山,山,山,山,山,山,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,山,山,山,山,山,山,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,山,山,山,山,山,山,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,海,海,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,山,山,山,山,山,山,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,海,海,海,海,海,,,,,,,,,,資源,資源,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,山,山,山,山,山,山,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,海,海,海,海,海,海,,,,,,,,,,資源,資源,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,海,海,海,海,海,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,海,海,海,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,海,海,海,海,海,海,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,海,海,海,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,海,海,海,海,海,海,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,海,海,海,海,海,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,海,海,海,海,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,海,海,海,海,海,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,海,海,海,海,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,海,海,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,山,山,山,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,山,山,山,山,山,山,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,山,山,山,山,山,山,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,山,山,山,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,山,山,山,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,山,山,山,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,山,山,山,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,山,山,山,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,海,海,海,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,海,海,海,海,,,,,,,,,山,山,山,山,山,山,,,,資源,資源,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,海,海,海,海,海,,,,,,,,,,山,山,山,山,山,山,,,,資源,資源,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,海,海,海,海,海,海,,,,,,,,,,,山,山,山,山,山,山,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,海,海,海,海,海,海,,,,,,,,,,,山,山,山,山,山,山,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,海,海,海,海,海,,,,,,,,,,,,山,山,山,山,山,山,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,山,山,山,山,山,山,山,山,海,海,,,,,,,,,,,,,山,山,山,山,山,山,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,山,山,山,山,山,山,山,山,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,資源,資源,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,山,山,山,山,山,山,山,山,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,資源,資源,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,山,山,山,山,山,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,山,山,山,山,山,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,山,山,山,山,山,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,山,山,山,山,山,山,山,山,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,山,山,山,山,山,山,山,山,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,資源,資源,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,`.trim();
+
+        function parseObstacleCSV() {
+            // Initialize 200x200 grid with empty strings
+            obstacleGrid = Array.from({ length: SIZE }, () => Array(SIZE).fill(''));
+            const rows = rawCSV.split('\n');
+            for (let r = 0; r < Math.min(rows.length, SIZE); r++) {
+                const cols = rows[r].split(',');
+                for (let c = 0; c < Math.min(cols.length, SIZE); c++) {
+                    const val = cols[c].trim();
+                    if (val) {
+                        obstacleGrid[r][c] = val;
+                    }
+                }
+            }
+        }
+
+        const getConfig = t => {
+            switch(t) {
+                case 'hq': return { coreSize: 3, domainSize: 15, isCity: false, label: '本部', bg: 'bg-amber-500/90 border-amber-300 text-slate-950', dom: 'domain-hq' };
+                case 'flag': return { coreSize: 1, domainSize: 7, isCity: false, label: '旗', bg: 'bg-amber-700/90 border-amber-400 text-white', dom: 'domain-flag' };
+                case 'trap': return { coreSize: 3, domainSize: 3, isCity: false, label: '罠', bg: 'bg-orange-600/90 border-orange-400 text-white', dom: null };
+                case 'planet1': return { coreSize: 2, domainSize: 6, isCity: true, label: '都市', bg: 'bg-purple-600/90 border-purple-400 text-white', dom: 'domain-planet1' };
+                case 'planet3': return { coreSize: 2, domainSize: 10, isCity: true, label: '都市', bg: 'bg-pink-600/90 border-pink-400 text-white', dom: 'domain-planet3' };
+                default: return { coreSize: 2, domainSize: 2, isCity: true, label: '都市', bg: 'bg-blue-600/90 border-blue-400 text-white', dom: 'domain-normal' };
+            }
+        };
+
+        function changeZoom(delta) {
+            currentZoom = Math.max(0.6, Math.min(2.5, currentZoom + delta));
+            document.getElementById('map-container-inner').style.transform = `scale(${currentZoom})`;
+            document.getElementById('zoom-level-text').textContent = Math.round(currentZoom * 100) + '%';
+        }
+
+        function initMap() {
+            parseObstacleCSV();            renderRulers();
+            renderGrid();
+            setupCursorTracker();
+            setupGlobalDragListeners();
+            updateLists();
+        }
+
+        function renderRulers() {
+            let topHtml = '', leftHtml = '';
+            for (let y = 0; y < SIZE; y++) topHtml += `<div class="absolute text-center" style="left:${y * CELL}px; width:${CELL}px; font-size:9px;">${790 - y}</div>`;
+            for (let x = 0; x < SIZE; x++) leftHtml += `<div class="absolute flex items-center justify-end pr-1.5" style="top:${x * CELL}px; height:${CELL}px; font-size:9px;">${700 - x}</div>`;
+            
+            // Add reference line between Y750 and Y749 (which corresponds to global Y coordinate 750 / internal grid row calculation)
+            // Coordinate mapping: Y = 790 - y. Y = 750 means y = 40. Line should be right between y=40 and y=41 (i.e. at left = 41 * CELL)
+            // Let's compute exact pixel position for y = 40 (since Y750 is y=40 and Y749 is y=41)
+            const y750InternalY = 790 - 750; // = 40
+            const linePixelLeft = (y750InternalY + 1) * CELL; // between y=40 and y=41
+            topHtml += `<div class="absolute top-0 bottom-0 border-l-2 border-red-500/80 pointer-events-none z-30" style="left:${linePixelLeft}px; height: 3200px;" title="Y750 / Y749境界"></div>`;
+
+            document.getElementById('ruler-top').innerHTML = topHtml;
+            document.getElementById('ruler-left').innerHTML = leftHtml;
+        }
+
+        function checkCollision(rx, ry, size, excludeId = null) {
+            // Check map boundaries
+            if (rx < 0 || ry < 0 || rx + size > SIZE || ry + size > SIZE) return true;
+
+            // Check collision with obstacles (resources, mountains, ocean)
+            for (let r = 0; r < size; r++) {
+                for (let c = 0; c < size; c++) {
+                    const checkX = rx + r;
+                    const checkY = ry + c;
+                    if (checkX >= 0 && checkX < SIZE && checkY >= 0 && checkY < SIZE) {
+                        if (obstacleGrid[checkX][checkY] !== '') return true;
+                    }
+                }
+            }
+
+            // Check collision with other items
+            for (let item of items) {
+                if (item.id === excludeId) continue;
+                const cfg = getConfig(item.type);
+                if (rx < item.x + cfg.coreSize && rx + size > item.x && ry < item.y + cfg.coreSize && ry + size > item.y) return true;
+            }
+            return false;
+        }
+
+        function findFreePosition(size) {
+            for (let x = 10; x <= SIZE - size; x++) {
+                for (let y = 10; y <= SIZE - size; y++) {
+                    if (!checkCollision(x, y, size)) return {x, y};
+                }
+            }
+            // fallback scan from top-left if needed
+            for (let x = 0; x <= SIZE - size; x++) {
+                for (let y = 0; y <= SIZE - size; y++) {
+                    if (!checkCollision(x, y, size)) return {x, y};
+                }
+            }
+            return {x: 10, y: 10};
+        }
+
+        function addItem(type) {
+            const cfg = getConfig(type);
+            if (cfg.isCity && items.filter(i => getConfig(i.type).isCity).length >= MAX_CITIES) return;
+            const pos = findFreePosition(cfg.coreSize);
+            const cityCount = items.filter(i => getConfig(i.type).isCity).length + 1;
+            items.push({ id: 'item_' + Date.now(), type, x: pos.x, y: pos.y, name: cfg.isCity ? `都市${cityCount}` : (type === 'hq' ? '本陣' : type === 'trap' ? '罠' : '同盟旗') });
+            renderGrid();
+            updateLists();
+        }
+
+        function clearAll(isCity) {
+            items = items.filter(i => getConfig(i.type).isCity !== isCity);
+            renderGrid();
+            updateLists();
+        }
+
+        function deleteItem(id) {
+            items = items.filter(i => i.id !== id);
+            renderGrid();
+            updateLists();
+        }
+
+        function autoArrange() {
+            let cx = 10, cy = 10;
+            for (let item of items) {
+                const cfg = getConfig(item.type);
+                let placed = false;
+                while(!placed && cx <= SIZE - cfg.coreSize) {
+                    if (!checkCollision(cx, cy, cfg.coreSize, item.id)) { item.x = cx; item.y = cy; placed = true; }
+                    cy += 3;
+                    if (cy > SIZE - cfg.coreSize) { cy = 10; cx += 3; }
+                }
+            }
+            renderGrid();
+            updateLists();
+        }
+
+        function renderGrid() {
+            let html = '';
+            for (let x = 0; x < SIZE; x++) {
+                for (let y = 0; y < SIZE; y++) {
+                    let obsClass = '';
+                    const obsVal = obstacleGrid[x][y];
+                    if (obsVal === '資源') obsClass = ' obs-resource';
+                    else if (obsVal === '山') obsClass = ' obs-mountain';
+                    else if (obsVal === '海') obsClass = ' obs-ocean';
+
+                    html += `<div data-x="${x}" data-y="${y}" class="absolute border border-white/5${obsClass}" style="left:${y*CELL}px; top:${x*CELL}px; width:${CELL}px; height:${CELL}px;"></div>`;
+                }
+            }
+
+            items.forEach(item => {
+                const cfg = getConfig(item.type);
+                const off = Math.floor((cfg.domainSize - cfg.coreSize) / 2);
+                if (cfg.dom) {
+                    html += `<div class="absolute ${cfg.dom} rounded" style="left:${(item.y-off)*CELL}px; top:${(item.x-off)*CELL}px; width:${cfg.domainSize*CELL}px; height:${cfg.domainSize*CELL}px;"></div>`;
+                }
+                html += `<div class="absolute draggable ${cfg.bg} border rounded flex items-center justify-center text-[10px] font-bold shadow-md z-10" style="left:${item.y*CELL}px; top:${item.x*CELL}px; width:${cfg.coreSize*CELL}px; height:${cfg.coreSize*CELL}px;" onmousedown="startDrag(event, '${item.id}')" ontouchstart="startDrag(event, '${item.id}')">${cfg.isCity ? '都市' : cfg.label}</div>`;
+            });
+
+            // Render Y750 / Y749 boundary line directly on the grid as well
+            const y750InternalY = 790 - 750;
+            const gridLineLeft = (y750InternalY + 1) * CELL;
+            html += `<div class="absolute top-0 bottom-0 border-l-2 border-red-500 pointer-events-none z-20 shadow" style="left:${gridLineLeft}px; height: 3200px;"></div>`;
+
+            document.getElementById('grid-map').innerHTML = html;
+        }
+
+        function updateLists() {
+            let cHtml = '', fHtml = '';
+            items.forEach(item => {
+                const cfg = getConfig(item.type);
+                const row = `<div class="flex items-center justify-between bg-slate-900/80 px-2 py-1 rounded border border-slate-800 text-[11px]"><span class="font-bold ${cfg.isCity ? 'text-slate-200' : 'text-amber-300'}">${item.name} (${700-item.x}, ${790-item.y})</span><button onclick="deleteItem('${item.id}')" class="text-rose-400 hover:text-rose-300"><i class="fa-solid fa-trash"></i></button></div>`;
+                if (cfg.isCity) cHtml += row; else fHtml += row;
+            });
+            document.getElementById('city-list').innerHTML = cHtml || '<span class="text-slate-500 text-[10px]">都市なし</span>';
+            document.getElementById('flag-list').innerHTML = fHtml || '<span class="text-slate-500 text-[10px]">同盟建築なし</span>';
+            document.getElementById('city-badge').textContent = `都市: ${items.filter(i => getConfig(i.type).isCity).length}/${MAX_CITIES}`;
+            document.getElementById('flag-badge').textContent = `建築: ${items.filter(i => !getConfig(i.type).isCity).length}`;
+        }
+
+        function setupCursorTracker() {
+            const tip = document.getElementById('tip'), wrapper = document.getElementById('map-wrapper');
+            wrapper.addEventListener('mousemove', e => {
+                const rect = wrapper.getBoundingClientRect();
+                const ox = (e.clientX - rect.left - (48 * currentZoom)) / currentZoom, oy = (e.clientY - rect.top - (32 * currentZoom)) / currentZoom;
+                if (ox >= 0 && oy >= 0) {
+                    const y = Math.floor(ox / (CELL * currentZoom)), x = Math.floor(oy / (CELL * currentZoom));
+                    if (x < SIZE && y < SIZE) {
+                        tip.style.display = 'block';
+                        tip.style.left = (e.clientX + 12) + 'px';
+                        tip.style.top = (e.clientY + 12) + 'px';
+                        tip.textContent = `X: ${700 - x}, Y: ${790 - y}`;
+                        return;
+                    }
+                }
+                tip.style.display = 'none';
+            });
+            wrapper.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+        }
+
+        function startDrag(e, id) {
+            e.stopPropagation();
+            draggingItem = id;
+        }
+
+        function setupGlobalDragListeners() {
+            const wrapper = document.getElementById('map-wrapper');
+            let originalPos = null;
+
+            function onMove(cx, cy) {
+                if (!draggingItem) return;
+                const rect = wrapper.getBoundingClientRect();
+                const ox = (cx - rect.left - (48 * currentZoom)) / currentZoom, oy = (cy - rect.top - (32 * currentZoom)) / currentZoom;
+                const ty = Math.floor(ox / (CELL * currentZoom)), tx = Math.floor(oy / (CELL * currentZoom));
+                let item = items.find(i => i.id === draggingItem);
+                if (!item) return;
+                const cfg = getConfig(item.type);
+                if (tx >= 0 && ty >= 0 && tx <= SIZE - cfg.coreSize && ty <= SIZE - cfg.coreSize) {
+                    if (!checkCollision(tx, ty, cfg.coreSize, item.id)) {
+                        item.x = tx; 
+                        item.y = ty;
+                        renderGrid();
+                    }
+                }
+            }
+            window.addEventListener('mousemove', e => { if (draggingItem) onMove(e.clientX, e.clientY); });
+            window.addEventListener('mouseup', () => { if (draggingItem) { draggingItem = null; renderGrid(); updateLists(); } });
+            window.addEventListener('touchmove', e => { if (draggingItem && e.touches.length > 0) onMove(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
+            window.addEventListener('touchend', () => { if (draggingItem) { draggingItem = null; renderGrid(); updateLists(); } });
+        }
+
+        window.onload = initMap;
+    </script>
+</body>
+</html>
